@@ -49,7 +49,7 @@ struct CameraHook {
 
     static func printUsage() {
         print("""
-        camera-hook - Run scripts when your camera turns on or off
+        camera-hook \(version) - Run scripts when your camera turns on or off
 
         Usage: camera-hook <command>
 
