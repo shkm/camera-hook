@@ -26,6 +26,7 @@ struct CameraHook {
             let state = running ? "on" : "off"
             print("camera \(state)")
             fflush(stdout)
+            sendNotification(state: state)
             runScripts(for: state)
         }
 
@@ -71,6 +72,15 @@ struct CameraHook {
                 fflush(stdout)
             }
         }
+    }
+
+    static func sendNotification(state: String) {
+        let message = state == "on" ? "Camera is now active" : "Camera is now off"
+        let script = "display notification \"\(message)\" with title \"CameraHook\""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
     }
 
     static func getBuiltInCameraID() -> CMIOObjectID? {
