@@ -7,13 +7,13 @@ struct CameraHook {
 
     static let scriptsBaseURL: URL = {
         let appSupport = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/CameraHook")
+            .appendingPathComponent("Library/Application Support/camera-hook")
         return appSupport
     }()
 
     static let logPath: String = {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/CameraHook.log").path
+            .appendingPathComponent("Library/Logs/camera-hook.log").path
     }()
 
     static let domain = "gui/\(getuid())"
@@ -51,9 +51,9 @@ struct CameraHook {
 
     static func printUsage() {
         print("""
-        CameraHook - Run scripts when your camera turns on or off
+        camera-hook - Run scripts when your camera turns on or off
 
-        Usage: CameraHook <command>
+        Usage: camera-hook <command>
 
         Commands:
           watch       Start listening for camera events and run scripts

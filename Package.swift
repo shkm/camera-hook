@@ -4,11 +4,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "CameraHook",
+    name: "camera-hook",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "CameraHook"
+            name: "camera-hook"
         ),
     ]
 )
