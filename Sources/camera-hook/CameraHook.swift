@@ -36,8 +36,6 @@ struct CameraHook {
             install()
         case "uninstall":
             uninstall()
-        case "restart":
-            restart()
         case "logs":
             let follow = args.dropFirst().contains("-f")
             logs(follow: follow)
@@ -60,7 +58,6 @@ struct CameraHook {
           status      Show whether the launchd agent is installed and running
           install     Install the launchd agent for background operation
           uninstall   Uninstall the launchd agent
-          restart     Restart the launchd agent
           logs [-f]   Show logs (use -f to follow)
 
         Scripts directory:
@@ -148,22 +145,6 @@ struct CameraHook {
 
         try! fm.removeItem(at: launchAgentURL)
         print("Unloaded and uninstalled launch agent.")
-    }
-
-    static func restart() {
-        let bootout = Process()
-        bootout.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        bootout.arguments = ["bootout", "\(domain)/\(label)"]
-        try? bootout.run()
-        bootout.waitUntilExit()
-
-        let bootstrap = Process()
-        bootstrap.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        bootstrap.arguments = ["bootstrap", domain, launchAgentURL.path]
-        try? bootstrap.run()
-        bootstrap.waitUntilExit()
-
-        print("Restarted launch agent.")
     }
 
     static func logs(follow: Bool) {

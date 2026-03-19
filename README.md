@@ -18,7 +18,6 @@ Commands:
   status      Show whether the launchd agent is installed and running
   install     Install and start the launchd agent for background operation
   uninstall   Stop and remove the launchd agent
-  restart     Restart the launchd agent
   logs [-f]   Show logs (use -f to follow)
 ```
 
