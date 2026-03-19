@@ -2,23 +2,11 @@
 
 Run scripts when your Mac's camera turns on or off.
 
-## Build
+## Install
 
 ```bash
-swift build -c release
-```
-
-## Usage
-
-```
-camera-hook <command>
-
-Commands:
-  watch       Start listening for camera events and run scripts
-  status      Show whether the launchd agent is installed and running
-  install     Install and start the launchd agent for background operation
-  uninstall   Stop and remove the launchd agent
-  logs [-f]   Show logs (use -f to follow)
+brew install shkm/brew/camera-hook
+brew services start camera-hook
 ```
 
 ## Scripts
@@ -42,28 +30,17 @@ cp examples/on/* ~/Library/Application\ Support/camera-hook/on/
 cp examples/off/* ~/Library/Application\ Support/camera-hook/off/
 ```
 
-## Background service
+## Commands
 
-Install as a launchd user agent so it runs automatically:
-
-```bash
-camera-hook install
+```
+camera-hook watch       Start listening for camera events and run scripts
+camera-hook status      Show installed scripts
 ```
 
-Check status:
+## Releasing
 
 ```bash
-camera-hook status
+scripts/release.sh <version>
 ```
 
-View logs:
-
-```bash
-camera-hook logs -f
-```
-
-Remove:
-
-```bash
-camera-hook uninstall
-```
+Once the release workflow completes, [trigger the Homebrew formula update](https://github.com/shkm/homebrew-brew/actions/workflows/update-camera-hook.yml).

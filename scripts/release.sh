@@ -19,3 +19,6 @@ git tag "$tag"
 git push origin "$tag"
 
 echo "Pushed $tag — release will be created by GitHub Actions"
+echo ""
+echo "Once the release workflow completes, update the Homebrew formula:"
+echo "  https://github.com/shkm/homebrew-brew/actions/workflows/update-camera-hook.yml"

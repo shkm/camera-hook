@@ -48,3 +48,4 @@ jobs:
         with:
           files: camera-hook
           generate_release_notes: true
+
