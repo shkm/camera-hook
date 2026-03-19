@@ -3,24 +3,10 @@ import Foundation
 
 @main
 struct CameraHook {
-    static let label = "me.schembri.apps.camerahook"
-
     static let scriptsBaseURL: URL = {
         let appSupport = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/camera-hook")
         return appSupport
-    }()
-
-    static let logPath: String = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/camera-hook.log").path
-    }()
-
-    static let domain = "gui/\(getuid())"
-
-    static let launchAgentURL: URL = {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }()
 
     static func main() {
@@ -32,15 +18,10 @@ struct CameraHook {
             watch()
         case "status":
             status()
-        case "install":
-            install()
-        case "uninstall":
-            uninstall()
-        case "logs":
-            let follow = args.dropFirst().contains("-f")
-            logs(follow: follow)
         case "help", "--help", "-h":
             printUsage()
+        case "--version":
+            print(version)
         default:
             printUsage()
             exit(1)
@@ -55,10 +36,7 @@ struct CameraHook {
 
         Commands:
           watch       Start listening for camera events and run scripts
-          status      Show whether the launchd agent is installed and running
-          install     Install the launchd agent for background operation
-          uninstall   Uninstall the launchd agent
-          logs [-f]   Show logs (use -f to follow)
+          status      Show installed scripts
 
         Scripts directory:
           \(scriptsBaseURL.path)/on/    Scripts to run when camera turns on
@@ -68,93 +46,20 @@ struct CameraHook {
         """)
     }
 
-    // MARK: - Launch Agent
+    // MARK: - Status
 
     static func status() {
-        let installed = FileManager.default.fileExists(atPath: launchAgentURL.path)
-        print("Installed: \(installed ? "yes" : "no")")
-
-        if installed {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            process.arguments = ["print", "\(domain)/\(label)"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            try? process.run()
-            process.waitUntilExit()
-            let running = process.terminationStatus == 0
-            print("Running:   \(running ? "yes" : "no")")
-        }
-
         let fm = FileManager.default
         for state in ["on", "off"] {
             let dir = scriptsBaseURL.appendingPathComponent(state)
             let entries = (try? fm.contentsOfDirectory(atPath: dir.path))?.sorted() ?? []
             let scripts = entries.filter { fm.isExecutableFile(atPath: dir.appendingPathComponent($0).path) }
-            print("")
             print("Scripts (\(state)): \(scripts.isEmpty ? "none" : "")")
             for script in scripts {
                 print("  \(state)/\(script)")
             }
+            if state == "on" { print("") }
         }
-    }
-
-    static func install() {
-        let binaryPath = ProcessInfo.processInfo.arguments[0]
-        let resolvedPath = URL(fileURLWithPath: binaryPath).standardized.path
-
-        let plist: [String: Any] = [
-            "Label": label,
-            "ProgramArguments": [resolvedPath, "watch"],
-            "KeepAlive": true,
-            "StandardOutPath": logPath,
-            "StandardErrorPath": logPath,
-        ]
-
-        let data = try! PropertyListSerialization.data(
-            fromPropertyList: plist, format: .xml, options: 0
-        )
-
-        let dir = launchAgentURL.deletingLastPathComponent()
-        try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try! data.write(to: launchAgentURL)
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["bootstrap", domain, launchAgentURL.path]
-        try? process.run()
-        process.waitUntilExit()
-
-        print("Installed and loaded launch agent.")
-        print("Binary: \(resolvedPath)")
-    }
-
-    static func uninstall() {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: launchAgentURL.path) else {
-            print("Launch agent not installed.")
-            return
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["bootout", "\(domain)/\(label)"]
-        try? process.run()
-        process.waitUntilExit()
-
-        try! fm.removeItem(at: launchAgentURL)
-        print("Unloaded and uninstalled launch agent.")
-    }
-
-    static func logs(follow: Bool) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
-        process.arguments = follow ? ["-f", logPath] : ["-n", "50", logPath]
-
-        signal(SIGINT, SIG_DFL)
-        try? process.run()
-        process.waitUntilExit()
     }
 
     // MARK: - Camera Watcher
