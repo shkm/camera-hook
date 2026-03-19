@@ -3,6 +3,12 @@ import Foundation
 
 @main
 struct CameraHook {
+    static let scriptsBaseURL: URL = {
+        let appSupport = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/CameraHook")
+        return appSupport
+    }()
+
     static func main() {
         guard let deviceID = getBuiltInCameraID() else {
             print("No camera found.")
@@ -17,11 +23,10 @@ struct CameraHook {
 
         let status = CMIOObjectAddPropertyListenerBlock(deviceID, &property, DispatchQueue.main) { _, _ in
             let running = isRunning(deviceID)
-            if running {
-                print("camera on")
-            } else {
-                print("camera off")
-            }
+            let state = running ? "on" : "off"
+            print("camera \(state)")
+            fflush(stdout)
+            runScripts(for: state)
         }
 
         guard status == noErr else {
@@ -29,9 +34,43 @@ struct CameraHook {
             exit(1)
         }
 
+        print("Scripts directory: \(scriptsBaseURL.path)")
         print("Listening for camera events... (Ctrl+C to quit)")
         fflush(stdout)
         dispatchMain()
+    }
+
+    static func runScripts(for state: String) {
+        let dir = scriptsBaseURL.appendingPathComponent(state)
+        let fm = FileManager.default
+
+        guard let entries = try? fm.contentsOfDirectory(atPath: dir.path) else {
+            return
+        }
+
+        let scripts = entries.sorted()
+
+        for script in scripts {
+            let path = dir.appendingPathComponent(script).path
+            guard fm.isExecutableFile(atPath: path) else { continue }
+
+            print("  running \(state)/\(script)")
+            fflush(stdout)
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: path)
+            process.environment = ProcessInfo.processInfo.environment.merging(
+                ["CAMERA_HOOK_STATE": state]
+            ) { _, new in new }
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                print("  error running \(state)/\(script): \(error.localizedDescription)")
+                fflush(stdout)
+            }
+        }
     }
 
     static func getBuiltInCameraID() -> CMIOObjectID? {
