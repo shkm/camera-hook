@@ -35,14 +35,12 @@ Scripts are executed in lexical order. Each script receives the environment vari
 
 ### Example
 
+Copy the included example scripts to get started with notifications:
+
 ```bash
 mkdir -p ~/Library/Application\ Support/camera-hook/{on,off}
-
-cat > ~/Library/Application\ Support/camera-hook/on/01-light.sh << 'EOF'
-#!/bin/bash
-$HOME/bin/litra on
-EOF
-chmod +x ~/Library/Application\ Support/camera-hook/on/01-light.sh
+cp examples/on/* ~/Library/Application\ Support/camera-hook/on/
+cp examples/off/* ~/Library/Application\ Support/camera-hook/off/
 ```
 
 ## Background service
