@@ -64,11 +64,70 @@ struct CameraHook {
 
     // MARK: - Camera Watcher
 
+    /// Tracks which devices we're currently listening to, so we can detect additions/removals.
+    /// All access happens on the main queue (via DispatchQueue.main listener blocks).
+    nonisolated(unsafe) static var monitoredDevices: Set<CMIOObjectID> = []
+
     static func watch() {
-        guard let deviceID = getBuiltInCameraID() else {
-            print("No camera found.")
+        let devices = getAllCameraIDs()
+
+        if devices.isEmpty {
+            log("No cameras found. Waiting for a camera to be connected...")
+        } else {
+            log("Found \(devices.count) camera(s)")
+            for device in devices {
+                addCameraListener(device)
+            }
+        }
+
+        addDeviceListListener()
+
+        log("Scripts directory: \(scriptsBaseURL.path)")
+        log("Listening for camera events... (Ctrl+C to quit)")
+        fflush(stdout)
+        dispatchMain()
+    }
+
+    /// Listens for changes to the system-wide device list (cameras plugged in or removed).
+    static func addDeviceListListener() {
+        var property = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+
+        let status = CMIOObjectAddPropertyListenerBlock(
+            CMIOObjectID(kCMIOObjectSystemObject), &property, DispatchQueue.main
+        ) { _, _ in
+            handleDeviceListChanged()
+        }
+
+        guard status == noErr else {
+            log("Failed to add device list listener: \(status)")
             exit(1)
         }
+    }
+
+    /// Called when the system device list changes. Diffs against our tracked set
+    /// to add listeners for new cameras and remove listeners for unplugged ones.
+    static func handleDeviceListChanged() {
+        let currentDevices = Set(getAllCameraIDs())
+        let added = currentDevices.subtracting(monitoredDevices)
+        let removed = monitoredDevices.subtracting(currentDevices)
+
+        for device in removed {
+            removeCameraListener(device)
+        }
+
+        for device in added {
+            addCameraListener(device)
+        }
+    }
+
+    /// Registers a listener for camera on/off events on the given device.
+    static func addCameraListener(_ deviceID: CMIOObjectID) {
+        let name = getDeviceName(deviceID)
+        log("Watching camera: \(name) (id: \(deviceID))")
 
         var property = CMIOObjectPropertyAddress(
             mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceIsRunningSomewhere),
@@ -79,25 +138,33 @@ struct CameraHook {
         let status = CMIOObjectAddPropertyListenerBlock(deviceID, &property, DispatchQueue.main) { _, _ in
             let running = isRunning(deviceID)
             let state = running ? "on" : "off"
-            print("camera \(state)")
+            log("camera \(state) (\(name))")
             fflush(stdout)
-            runScripts(for: state)
+            runScripts(for: state, cameraName: name)
         }
 
-        guard status == noErr else {
-            print("Failed to add listener: \(status)")
-            exit(1)
+        if status == noErr {
+            monitoredDevices.insert(deviceID)
+        } else {
+            log("Failed to add listener for \(name) (id: \(deviceID)): \(status)")
         }
 
-        print("Scripts directory: \(scriptsBaseURL.path)")
-        print("Listening for camera events... (Ctrl+C to quit)")
         fflush(stdout)
-        dispatchMain()
+    }
+
+    /// Removes the listener for a camera that has been unplugged.
+    static func removeCameraListener(_ deviceID: CMIOObjectID) {
+        log("Camera removed (id: \(deviceID))")
+        monitoredDevices.remove(deviceID)
+        // Note: CMIOObjectRemovePropertyListenerBlock requires the original block reference,
+        // which we don't retain. The listener is effectively dead once the device is gone,
+        // so removal from our tracked set is sufficient.
+        fflush(stdout)
     }
 
     // MARK: - Scripts
 
-    static func runScripts(for state: String) {
+    static func runScripts(for state: String, cameraName: String) {
         let dir = scriptsBaseURL.appendingPathComponent(state)
         let fm = FileManager.default
 
@@ -111,20 +178,20 @@ struct CameraHook {
             let path = dir.appendingPathComponent(script).path
             guard fm.isExecutableFile(atPath: path) else { continue }
 
-            print("  running \(state)/\(script)")
+            log("  running \(state)/\(script)")
             fflush(stdout)
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: path)
             process.environment = ProcessInfo.processInfo.environment.merging(
-                ["CAMERA_HOOK_STATE": state]
+                ["CAMERA_HOOK_STATE": state, "CAMERA_HOOK_DEVICE": cameraName]
             ) { _, new in new }
 
             do {
                 try process.run()
                 process.waitUntilExit()
             } catch {
-                print("  error running \(state)/\(script): \(error.localizedDescription)")
+                log("  error running \(state)/\(script): \(error.localizedDescription)")
                 fflush(stdout)
             }
         }
@@ -132,7 +199,8 @@ struct CameraHook {
 
     // MARK: - Camera
 
-    static func getBuiltInCameraID() -> CMIOObjectID? {
+    /// Returns all camera device IDs currently known to the system.
+    static func getAllCameraIDs() -> [CMIOObjectID] {
         var property = CMIOObjectPropertyAddress(
             mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
             mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
@@ -143,10 +211,33 @@ struct CameraHook {
         CMIOObjectGetPropertyDataSize(CMIOObjectID(kCMIOObjectSystemObject), &property, 0, nil, &dataSize)
 
         let count = Int(dataSize) / MemoryLayout<CMIOObjectID>.size
+        guard count > 0 else { return [] }
+
         var devices = [CMIOObjectID](repeating: 0, count: count)
         CMIOObjectGetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &property, 0, nil, dataSize, &dataSize, &devices)
 
-        return devices.first
+        return devices
+    }
+
+    /// Returns a human-readable name for a camera device.
+    static func getDeviceName(_ deviceID: CMIOObjectID) -> String {
+        var property = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOObjectPropertyName),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+
+        var dataSize: UInt32 = 0
+        let sizeStatus = CMIOObjectGetPropertyDataSize(deviceID, &property, 0, nil, &dataSize)
+        guard sizeStatus == noErr, dataSize > 0 else { return "Unknown" }
+
+        var name = Unmanaged<CFString>.passUnretained("" as CFString)
+        let status = CMIOObjectGetPropertyData(deviceID, &property, 0, nil, dataSize, &dataSize, &name)
+
+        if status == noErr {
+            return name.takeUnretainedValue() as String
+        }
+        return "Unknown"
     }
 
     static func isRunning(_ deviceID: CMIOObjectID) -> Bool {
@@ -160,5 +251,15 @@ struct CameraHook {
         var dataSize = UInt32(MemoryLayout<UInt32>.size)
         CMIOObjectGetPropertyData(deviceID, &property, 0, nil, dataSize, &dataSize, &running)
         return running != 0
+    }
+
+    // MARK: - Logging
+
+    static func log(_ message: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let timestamp = formatter.string(from: Date())
+        print("[\(timestamp)] \(message)")
+        fflush(stdout)
     }
 }
